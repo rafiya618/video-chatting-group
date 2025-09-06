@@ -28,6 +28,9 @@ export default function Room({ communityId: propCommunityId }) {
   const [isJoined, setIsJoined] = useState(false);
   const [participants, setParticipants] = useState(new Set());
 
+  const [chatMessages, setChatMessages] = useState([]);
+const [chatInput, setChatInput] = useState("");
+
   // Keep track of consumed producers and consumers
   const consumedProducersRef = useRef(new Set());
   const consumersRef = useRef(new Map()); // consumerId -> consumer
@@ -121,6 +124,18 @@ export default function Room({ communityId: propCommunityId }) {
     };
   }, [device]);
 
+
+// receive incoming messages
+useEffect(() => {
+  socket.on("call:chat-message", (msg) => {
+    setChatMessages((prev) => [...prev, msg]);
+  });
+
+  return () => {
+    socket.off("call:chat-message");
+  };
+}, []);
+
   // join the room
   const joinRoom = async () => {
     if (isJoined || !communityId) return;
@@ -135,7 +150,8 @@ export default function Room({ communityId: propCommunityId }) {
       }
 
       console.log("Joined room successfully", res);
-      const { routerRtpCapabilities, existingProducers, allProducersByRoom } = res;
+      const { routerRtpCapabilities, existingProducers, allProducersByRoom ,chatHistory} = res;
+      setChatMessages(chatHistory || []);
 
       try {
         // Initialize device
@@ -181,6 +197,12 @@ export default function Room({ communityId: propCommunityId }) {
       }
     });
   };
+
+  const sendMessage = () => {
+  if (!chatInput.trim()) return;
+  socket.emit("call:chat-message", { communityId, message: chatInput });
+  setChatInput("");
+};
 
   const createSendTransport = (dev) =>
     new Promise((resolve, reject) => {
@@ -610,6 +632,41 @@ export default function Room({ communityId: propCommunityId }) {
           onError={(e) => console.error("Local video error:", e)}
         />
       </div>
+
+      <div style={{ marginTop: 16, border: "1px solid #ccc", borderRadius: 6, padding: 8, width: 300 }}>
+  <h4>In-Call Chat</h4>
+  <div style={{ 
+    height: 200, 
+    overflowY: "auto", 
+    background: "#f9f9f9", 
+    padding: 8, 
+    marginBottom: 8 
+  }}>
+    {chatMessages.length === 0 ? (
+      <p style={{ color: "#888" }}>No messages yet</p>
+    ) : (
+      chatMessages.map((msg, i) => (
+        <div key={i} style={{ marginBottom: 4 }}>
+          <strong>{msg.socketId.slice(-4)}:</strong> {msg.message}
+        </div>
+      ))
+    )}
+  </div>
+  <div style={{ display: "flex", gap: 8 }}>
+    <input
+      type="text"
+      value={chatInput}
+      onChange={(e) => setChatInput(e.target.value)}
+      onKeyDown={(e) => e.key === "Enter" && sendMessage()}
+      style={{ flex: 1, padding: 6 }}
+      placeholder="Type a message..."
+    />
+    <button onClick={sendMessage} style={{ padding: "6px 12px" }}>
+      Send
+    </button>
+  </div>
+</div>
+
 
       <div style={{ marginBottom: 16 }}>
         <h4>Remote Participants ({remoteStreamArray.length})</h4>

@@ -1,9 +1,29 @@
-import { ensureCommunity, getCommunities, cleanupCommunity } from "../mediasoup/communityManager.js";
+import { ensureCommunity, getCommunities, cleanupCommunity as baseCleanup } from "../mediasoup/communityManager.js";
 import { LISTEN_IP, ANNOUNCED_IP } from "../config.js";
 
 export default function registerSocketHandlers(io, worker) {
+  // 🟢 store chat messages in-memory, per community
+  const inCallChats = new Map(); // communityId -> array of { socketId, message, ts }
+
+  // Wrap cleanup so it also clears chat
+  function cleanupCommunity(communityId) {
+    baseCleanup(communityId);
+    inCallChats.delete(communityId); // clear chat log when room ends
+  }
+
   io.on("connection", (socket) => {
     console.log("Socket connected:", socket.id);
+
+    // --- In-Call Chat: send + history ---
+    socket.on("call:chat-message", ({ communityId, message }) => {
+      if (!inCallChats.has(communityId)) inCallChats.set(communityId, []);
+      const chatLog = inCallChats.get(communityId);
+
+      const msg = { socketId: socket.id, message, ts: Date.now() };
+      chatLog.push(msg);
+
+      io.to(communityId).emit("call:chat-message", msg);
+    });
 
     // 1. Join Room
     socket.on("join-room", async ({ communityId }, callback) => {
@@ -29,10 +49,13 @@ export default function registerSocketHandlers(io, worker) {
           }));
         }
 
+        const chatHistory = inCallChats.get(communityId) || []; // 🟢 send chat history on join
+
         callback({ 
           routerRtpCapabilities: community.router.rtpCapabilities, 
           existingProducers,
-          allProducersByRoom
+          allProducersByRoom,
+          chatHistory // 👈 include history so reload/rejoin works like Zoom/Meet
         });
       } catch (err) {
         callback({ error: err.message });
