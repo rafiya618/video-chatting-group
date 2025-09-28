@@ -55,7 +55,7 @@ export default function registerSocketHandlers(io, worker) {
           routerRtpCapabilities: community.router.rtpCapabilities, 
           existingProducers,
           allProducersByRoom,
-          chatHistory // 👈 include history so reload/rejoin works like Zoom/Meet
+          chatHistory 
         });
       } catch (err) {
         callback({ error: err.message });
